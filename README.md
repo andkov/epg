@@ -1,2 +1,2 @@
-# quick-start
-Provides a quick start into a basic data analysis project
+# EPG Sales
+Analyses sales data of the Edmonton Potters' Guild
