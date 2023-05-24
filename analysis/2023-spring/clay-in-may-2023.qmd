@@ -1,0 +1,516 @@
+---
+title: "Clay in May 2023"
+author: "Andriy Koval"  
+date: "Last updated: `r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+format:
+  html:
+    toc: true
+    code-fold: true
+    theme: simplex
+    highlight-style: breeze
+editor: visual
+---
+
++---------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------+
+| Hello fellow potters,                                                                                                     | ![Clay in May 2023](images/clay-in-may.png){alt="Clay in May 2023" width="395"} |
+|                                                                                                                           |                                                                                 |
+| This report examines and explores the sales recorded during the "Clay in May" event the Guild's organized on May 6, 2023. |                                                                                 |
++---------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------+
+
+```{r, echo=F, message=F, results = 'hide'}
+rm(list = ls(all.names = TRUE)) # Clear the memory of variables from previous run. This is not called by knitr, because it's above the first chunk.
+cat("\014") # Clear the console
+```
+
+```{r set_options, echo=F, results="hide"}
+# cat("Working directory: ", getwd()) # turn on to test the location
+report_render_start_time <- Sys.time()
+# set options shared by all chunks
+knitr::opts_chunk$set(
+  results      = 'show',
+  message      = FALSE,
+  warning      = FALSE,
+  comment      = NA,
+  tidy         = FALSE,
+  # dpi        = 400, # dots per inch,
+  # out.width  = "650px", # pixels, this affects only the markdown, not the underlying png file.  The height will be scaled appropriately.
+  fig.width    = 6, # inches
+  fig.height   = 4, # inches
+  fig.path     = 'figure-png-com/' # where figures are stored
+)
+echo_chunks    <- FALSE #Toggle for debugging.
+message_chunks <- FALSE #Toggle for debugging.
+options(width=100) # number of characters to display in the output (dflt = 80)
+ggplot2::theme_set(ggplot2::theme_bw()) # common theme for all graphs
+```
+
+# Environment
+
+<details>
+
+<summary>Show packages</summary>
+
+```{r load-packages, message=message_chunks}
+library(squareupr)
+library(tidyverse)
+library(magrittr)
+library(dplyr)
+```
+
+```{r load-sources}
+# getwd()
+# source("./scripts/common-functions.R")
+source("../../scripts/common-functions.R")
+```
+
+```{r declare-globals, echo=FALSE}
+prints_folder <- paste0("../../analysis/2023-spring/prints/")
+if (!fs::dir_exists(prints_folder)) { fs::dir_create(prints_folder) }
+
+
+# do not commit the line below
+squareupr::sq_auth(personal_access_token = 
+# do not commit the line above 
+
+```
+
+```{r declare-functions, echo=FALSE}
+
+```
+
+</details>
+
+# Data Origin
+
+<details>
+
+<summary>Show data origin</summary>
+
+Behind the scene, the Square system creates a database, which stores data in multiple tables (e.g. transactions, payments, customers, etc.), but not all of them are used: it pretty much depends on the business and how you set it up (various taxes, fees, promotions, etc). I have used [this guide](https://www.r-bloggers.com/2018/05/analyzing-customer-data-from-square/) to setup a connection to the EPG Square account via an API.
+
+I've extracted only the fields that made sense to me and offered analytic potential. We can explore what else could be extracted, but so far, this is it.
+
+Expand the fold below to read how this data set was created (only if you'd like, but it's more for transparency of the report, I'll explain everything you need to know about the data to make sense of the results).
+
+Load transactions from tabulated sales books
+
+```{r load-data-0-sale-book, message=FALSE, cache=TRUE, results='show'}
+googlesheets4::gs4_deauth() # to indicate there is no need for a access token
+# https://googlesheets4.tidyverse.org/ 
+sheet_name <- "1MJRN-8wNjkknBJjU64HgcBEqinWF5BZDUwo6pt4xrpE"
+
+ds_sheet  <- googlesheets4::read_sheet(sheet_name,"sheet", skip = 0) %>% janitor::clean_names()
+ds_item   <- googlesheets4::read_sheet(sheet_name,"item",  skip = 0) %>% janitor::clean_names()
+ds_potter <- googlesheets4::read_sheet(sheet_name,"potter",skip = 0) %>% janitor::clean_names()
+
+ds_sheet %>% glimpse()
+ds_item %>% glimpse()
+ds_potter %>% glimpse()
+
+```
+
+Load transactions from Square
+
+```{r load-data-1-transaction, message=FALSE, cache=TRUE, results='show'}
+# list all transactions 
+# by default, if a date is provided with no time, then the time component is set to midnight
+ds_tran <- 
+  sq_list_transactions(
+    location = sq_list_locations()$id[1] # we only have 1 location
+    ,begin_time = as.Date('2015-10-17') # account start date
+    ,end_time = Sys.Date()
+  )
+# ds_tran %>% head()
+# d0 <- ds_tran %>% slice(1:2)#
+# d0 %>% purrr::transpose() %>% View()
+```
+
+Load payments
+
+```{r load-data-2-payment, results='show', message=FALSE, cache=TRUE}
+# NOTE: the API does not allow extracting for periods longer than 1 year
+# When looping and saving to list, encountered unexpected behavior, so brute force it for now
+d_pay_15 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2015-01-01') # account start date
+      ,end_time = as.Date('2015-12-31')
+     )
+d_pay_16 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2016-01-01') # account start date
+      ,end_time = as.Date('2016-12-31')
+     )
+
+d_pay_17 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2017-01-01') # account start date
+      ,end_time = as.Date('2017-12-31')
+     )
+
+d_pay_18 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2018-01-01') # account start date
+      ,end_time = as.Date('2018-12-31')
+     )
+
+d_pay_19 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2019-01-01') # account start date
+      ,end_time = as.Date('2019-12-31')
+     )
+
+d_pay_20 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2020-01-01') # account start date
+      ,end_time = as.Date('2020-12-31')
+     )
+d_pay_21 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2021-01-01') # account start date
+      ,end_time = as.Date('2021-12-31')
+     )
+d_pay_22 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2022-01-01') # account start date
+      ,end_time = as.Date('2022-12-31')
+     )
+d_pay_23 <- 
+    sq_list_payments(
+      location = sq_list_locations()$id[1] # we only have 1 location
+      ,begin_time = as.Date('2023-01-01') # account start date
+      ,end_time = as.Date('2023-12-31')
+     )
+
+ds_pay <- bind_rows(
+  d_pay_15
+  ,d_pay_16
+  ,d_pay_17
+  ,d_pay_18
+  ,d_pay_19
+  ,d_pay_20
+  ,d_pay_21
+  ,d_pay_22
+  ,d_pay_23
+  , .id = "year"
+)
+rm(
+    d_pay_15
+  ,d_pay_16
+  ,d_pay_17
+  ,d_pay_18
+  ,d_pay_19
+  ,d_pay_20
+  ,d_pay_21
+  ,d_pay_22
+  ,d_pay_23
+)
+# ds_pay %>% head()
+# d0 <- ds_pay %>% slice(1:2)
+# d0 %>% purrr::transpose() %>% View()
+
+
+```
+
+Extract needed fields from transactions, specifically, `tenders` component:
+
+```{r tweak-data-1-transaction,echo = T, results='hide', message=message_chunks, cache=T}
+
+extract_from_transactions <- function(x){
+    tibble(
+       transaction_id = sq_null_to_na(x$tender[[1]]$transaction_id)
+      ,payment_id     = sq_null_to_na(x$tender[[1]]$id)
+      ,customer_id    = sq_null_to_na(x$tender[[1]]$customer_id)
+      ,money_spent    = sq_null_to_na(x$tender[[1]]$amount_money$amount)/100
+      ,date_of_sale   = sq_null_to_na(x$tender[[1]]$created_at)
+      ,payment_type   = sq_null_to_na(x$tender[[1]]$type)
+      ,card_type      = sq_null_to_na(x$tender[[1]]$card_details$card$card_brand)
+      ,last_4         = sq_null_to_na(x$tender[[1]]$card_details$card$last_4)
+    )  
+}
+# Testing
+# d1 <- ds_tran %>% slice(1:2)#
+# d1 %>% purrr::transpose() %>% View()
+
+ds_tran2 <- 
+  ds_tran %>%
+  # d0 %>% 
+  purrr::transpose() %>%
+  purrr::map_df(extract_from_transactions) #%>% 
+  # mutate(
+  #   # `Z` at the end of the data means "zero offset", i.e. UTC
+  #   date_of_sale = lubridate::as_datetime(date_of_sale)
+  #   ,date_time = date_of_sale - lubridate::hms("07:00:00") # mountain time is GMT-7
+  #   ,date = lubridate::date(date_time)
+  #   # ,time = lubridate::time(date_time)
+  # )
+ds_tran2 %>% glimpse()
+```
+
+```{r tweak-data-2-payment,echo = T, results='hide', message=message_chunks, cache=T}
+extract_from_payments <- function(x){
+   tibble(
+      payment_id        = sq_null_to_na(x$id)
+      ,collected_amount = sq_null_to_na(x$total_collected_money$amount)/100
+      ,net_amount       = sq_null_to_na(x$net_total_money$amount)/100
+      ,gross_amount     = sq_null_to_na(x$gross_sales_money$amount)/100
+      ,tax_total        = sq_null_to_na(x$tax_money$amount)/100
+      ,processing_fee   = sq_null_to_na(x$processing_fee_money$amount)/100
+      
+
+    )  
+}
+# Testing
+# d0 <- ds_pay %>% slice(1:2)#
+# d0 %>% purrr::transpose() %>% View()
+
+ds_payment <- 
+  ds_pay %>% 
+  purrr::transpose() %>%
+  purrr::map_df(extract_from_payments)
+
+
+```
+
+```{r tweak-data-3-sales,echo = T, results='hide', message=message_chunks, cache=T}
+# Combine into a single dataset
+ds_sales <- 
+  ds_tran2 %>% 
+  full_join(ds_payment, by = "payment_id") %>% 
+  mutate(
+    # `Z` at the end of the data means "zero offset", i.e. UTC
+    sale_datetime = lubridate::as_datetime(date_of_sale)
+    ,sale_datetime = sale_datetime - lubridate::hms("07:00:00") # mountain time is GMT-7
+    ,sale_date = lubridate::date(sale_datetime)
+    # ,time = lubridate::time(date_time)
+  ) %>% 
+  relocate(
+    c("sale_datetime", "sale_date")
+    ,.after = "customer_id"
+  ) %>% 
+  select(-date_of_sale) %>% 
+  mutate(
+    sale_name = case_when(
+      sale_date %in% as.Date(c("2015-11-13","2015-11-14"))               ~ "2015-11-14"
+      ,sale_date %in% as.Date(c("2016-11-18","2016-11-19"))              ~ "2016-11-19"
+      ,sale_date %in% as.Date(c("2017-11-09","2017-11-17","2017-11-18")) ~ "2017-11-18"
+      ,sale_date %in% as.Date(c("2018-11-17"))                           ~ "2018-11-17"
+      ,sale_date %in% as.Date(c("2019-05-26"))                           ~ "2019-05-26"
+      ,sale_date %in% as.Date(c("2019-11-16"))                           ~ "2019-11-16"
+      ,sale_date %in% as.Date(c("2022-05-07"))                           ~ "2022-05-07"
+      ,sale_date %in% as.Date(c("2022-11-12"))                           ~ "2022-11-12"
+      ,TRUE ~ NA_character_
+    ) %>% as.Date()
+  ) %>% 
+  filter(
+    sale_date > as.Date("2023-05-01")
+  )
+# rm(ds_pay, ds_payment, ds_tran, ds_tran2)
+# ds_sales is the final dataset, containing all fields deemed relevant
+# while datasets occuring upstream should be used to extract more fields 
+# `ds_sales` should be used (for conceptual convenience) as the main dataset of the report
+```
+
+</details>
+
+# Data Description {#data-description}
+
+<details>
+
+<summary>Show data description</summary>
+
+The report is structured as a series of interactions with the data set `ds_sales` which contains all sales transactions of the Edmonton Potters' Guild (EPG) during the "Clay in May" event on May 6, 2023.
+
+```{r}
+ds_sales %>% explore::describe_all() %>% neat(caption="Table 1: Statistical properties of the columns")
+```
+
+### Identifiers
+
+The first three columns are unique identifiers of transactions, sales, and customers, respectively. Each row of the data set `ds_sales` is a payment transaction registered by the Square system.
+
+```{r}
+ds_sales %>% 
+  summarize(
+    row_count        = n()
+    ,transaction_count = n_distinct(transaction_id)   
+    ,payment_count    = n_distinct(payment_id)
+    ,customer_count   = n_distinct(customer_id) 
+  ) %>% 
+  neat(caption = "Table 2: Count of unique identifiers")
+```
+
+The Square system differentiates transactions and sales, because there could be other transactions besides sales (e.g. "Refund"), but I haven't observed any it in our records. The table above (Table 2) shows that each row contains a transaction, and there are as many transaction as sales, therefore we just verified that in this data set **each row is a sale**.
+
+### Dates
+
+The next two columns store the date of the sale in two formats, one with the exact time of the sale and one without
+
+```{r}
+ds_sales %>% 
+  select(sale_datetime, sale_date) %>% 
+  glimpse()
+```
+
+This is purely for convenience: `sale_date` is a derivative of a more precise measure in `sale_datetime`
+
+### Tenders
+
+The columns in the next section were extracted from the `tender` component of the transactions table
+
+```{r}
+ds_sales %>% 
+  select(money_spent,payment_type, card_type, last_4 ) %>% 
+  glimpse(50)
+
+ds_sales %>% 
+  select(money_spent,payment_type, card_type) %>% # too many categories in `last_4`
+  tableone::CreateTableOne(data=.) 
+```
+
+These fields, it seems, appear in multiple components of the extracted tables (from Square database), but `tenders`, so far has been the most convenient place to extract from.
+
+### Payments
+
+Lastly, the details of the payments are were extracted from the payments table
+
+```{r}
+ds_sales %>% 
+  select(collected_amount, net_amount, gross_amount, tax_total, processing_fee) %>% 
+  tableone::CreateTableOne(data=.)
+```
+
+</details>
+
+# Analysis
+
+
+
+The report is structured as a series of interactions with the data set `ds_sales` which contains all sales transactions of the Edmonton Potters' Guild (EPG) during the "Clay in May" event on May 6, 2023.
+
+Please refer to the [Data Description](#data-description) section for the details.
+
+# Square
+
+```{r q-1, echo = T, results='show', message=message_chunks, class.source ="fold-show"}
+dq1 <- 
+  ds_sales %>%
+  group_by(sale_date) %>% 
+  summarize(
+    transaction_count = n_distinct(transaction_id)
+    ,customer_count   = n_distinct(customer_id)
+    ,card_count       = n_distinct(last_4)
+    ,collected_total  = sum(money_spent, na.rm = T)
+    ,processing_fees  = sum(-processing_fee, na.rm =T)
+    ,tax_total        = sum(tax_total, na.rm =T)
+  ) 
+# dq1 %>% neat(caption = "Table 3a: Summary of transactions extracted from Square")
+dq1 %>% gt::gt(caption = "Table 3a: Summary of transactions extracted from Square")
+
+dq2 <- 
+  ds_sales %>%
+  summarize(
+    transaction_count = n_distinct(transaction_id)
+    ,customer_count   = n_distinct(customer_id)
+    ,card_count       = n_distinct(last_4)
+    ,collected_total  = sum(money_spent, na.rm = T)
+    ,processing_fees  = sum(-processing_fee, na.rm =T)
+    ,tax_total        = sum(tax_total, na.rm =T)
+  ) 
+# dq2 %>% neat(caption = "Table 3b: Summary of transactions extracted from Square")
+dq2 %>%  gt::gt(caption = "Table 3b: Summary of transactions extracted from Square")
+
+```
+
+# Cash
+
+The cash deposit after subtracting the float is $1200.80 (includes $57.18 GST) ( $1143.62 without GST)
+
+```{r}
+dq3 <-
+  dq1 %>% 
+  bind_rows(
+    tibble::tribble(
+      ~card_count, ~ collected_total, ~ tax_total,
+      0L, 1200.8, 57.18
+    )  
+  )
+dq3  %>% gt::gt()
+```
+
+# Sale Books
+
+```{r}
+ds_sheet %>% 
+  select(-1,-2, -flag) %>% 
+  group_by(cash) %>% 
+  summarize(
+    customer_count=n()
+    ,tax_total = sum(tax,na.rm=T)
+    ,collected_total = sum(total,na.rm=T)
+  ) %>% gt::gt()
+# ds_item %>% select(-1,-2)
+# ds_potter   
+```
+
+# All Sources
+
+```{r class.source = "fold-hide"}
+dq4 <- 
+  dq2 %>% 
+  mutate(source = "Square") %>% 
+  bind_rows(
+    tibble::tribble(
+      ~card_count, ~ collected_total, ~ tax_total,~source,
+      0L, 1200.8, 57.18, "Counted Cash"
+    )  
+  ) %>% 
+  bind_rows(
+    ds_sheet %>% 
+  select(-1,-2, -flag) %>% 
+  summarize(
+    customer_count=n()
+    ,transaction_count=n()
+    ,tax_total = sum(tax,na.rm=T)
+    ,collected_total = sum(total,na.rm=T)
+  ) %>% 
+    mutate(source = "Sale Books")
+  )
+dq4 %>% gt::gt()
+
+```
+
+
+
+# Session Information {#session-info}
+
+For the sake of documentation and reproducibility, the current report was rendered in the following environment. Click the line below to expand.
+
+<details>
+
+<summary>Environment</summary>
+
+```{r session-info, echo=FALSE}
+if( requireNamespace("devtools", quietly = TRUE) ) {
+  devtools::session_info()
+} else {
+  sessionInfo()
+}
+```
+
+</details>
+
+```{r session-duration, echo=FALSE}
+report_render_duration_in_seconds <- round(as.numeric(difftime(Sys.time(), report_render_start_time, units="secs")))
+```
+
+Report rendered by `r Sys.info()["user"]` at `r strftime(Sys.time(), "%Y-%m-%d, %H:%M %z")` in `r report_render_duration_in_seconds` seconds.

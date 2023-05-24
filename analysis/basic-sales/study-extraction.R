@@ -16,6 +16,7 @@ library(labelled)  # labels
 library(squareupr)
 library(dplyr)
 library(tidyverse)
+library(squareupr)
 # -- 2.Import only certain functions of a package into the search path.
 import::from("magrittr", "%>%")
 # -- 3. Verify these packages are available on the machine, but their functions need to be qualified: http://r-pkgs.had.co.nz/namespace.html#search-path
@@ -39,7 +40,7 @@ path_data_input <- "./data-private/derived/..."
 
 # ---- load-data ---------------------------------------------------------------
 # do not commit the line below
-
+squareupr::sq_auth(personal_access_token = "EAAAFzB8T90eHXuGePurm5bGO381L0XFv6u-6lIJB0NLj0kjuWd_LgbOEcNyIyh2")
 # do not commit the line above 
 
 # ---- inspect-data ------------------------------------------------------------
