@@ -7,7 +7,7 @@ output:
     keep_md: yes
     toc: yes
     toc_float: yes
-    code_folding: show
+    code_folding: hide
     theme: simplex
     highlight: tango
 editor_options: 
@@ -69,7 +69,7 @@ library(dplyr)
 <!-- Load the sources.  Suppress the output when loading sources. -->
 
 ```{r load-sources}
-getwd()
+# getwd()
 # source("./scripts/common-functions.R")
 source("../../scripts/common-functions.R")
 ```
@@ -77,8 +77,12 @@ source("../../scripts/common-functions.R")
 <!-- Load any Global functions and variables declared in the R file.  Suppress the output. -->
 
 ```{r declare-globals, echo=FALSE}
-# do not commit the line below
+prints_folder <- paste0("./analysis/sales-history/prints/")
+if (!fs::dir_exists(prints_folder)) { fs::dir_create(prints_folder) }
 
+
+# do not commit the line below
+squareupr::sq_auth(personal_access_token = "EAAAFzB8T90eHXuGePurm5bGO381L0XFv6u-6lIJB0NLj0kjuWd_LgbOEcNyIyh2")
 # do not commit the line above 
 
 ```
@@ -284,7 +288,20 @@ ds_sales <-
     c("sale_datetime", "sale_date")
     ,.after = "customer_id"
   ) %>% 
-  select(-date_of_sale)
+  select(-date_of_sale) %>% 
+  mutate(
+    sale_name = case_when(
+      sale_date %in% as.Date(c("2015-11-13","2015-11-14"))               ~ "2015-11-14"
+      ,sale_date %in% as.Date(c("2016-11-18","2016-11-19"))              ~ "2016-11-19"
+      ,sale_date %in% as.Date(c("2017-11-09","2017-11-17","2017-11-18")) ~ "2017-11-18"
+      ,sale_date %in% as.Date(c("2018-11-17"))                           ~ "2018-11-17"
+      ,sale_date %in% as.Date(c("2019-05-26"))                           ~ "2019-05-26"
+      ,sale_date %in% as.Date(c("2019-11-16"))                           ~ "2019-11-16"
+      ,sale_date %in% as.Date(c("2022-05-07"))                           ~ "2022-05-07"
+      ,sale_date %in% as.Date(c("2022-11-12"))                           ~ "2022-11-12"
+      ,TRUE ~ NA_character_
+    ) %>% as.Date()
+  )
 # rm(ds_pay, ds_payment, ds_tran, ds_tran2)
 # ds_sales is the final dataset, containing all fields deemed relevant
 # while datasets occuring upstream should be used to extract more fields 
@@ -333,18 +350,33 @@ ds_sales %>%
   )
 ```
 
+It's not yet clear to me how Square creates a unique identifier of a customer, but it appears that it does indeed links customers across payments (and dates, and cards):
+```{r}
+ds_sales %>% 
+  filter(!is.na(customer_id)) %>% 
+  group_by(customer_id) %>% 
+  mutate(
+    payment_count = n_distinct(payment_id)
+  ) %>% 
+  ungroup() %>% 
+  filter(payment_count > 1) %>% 
+  arrange(customer_id) %>% 
+  select(3,5:9, payment_count)
+  
+```
+However, we still need to clarify whether we can rely on this assumption for analysis
 > CLARIFICATION needed: how does Square assign customer id? 
 
 
 ### Dates 
 
-The next two columsn store the date of the sale in two formats, one with the exact time of the sale and one without
+The next two columns store the date of the sale in two formats, one with the exact time of the sale and one without
 ```{r}
 ds_sales %>% 
   select(sale_datetime, sale_date) %>% 
   glimpse()
-  
 ```
+This is purely for convenience: `sale_date` is a derivative of a more precise measure in `sale_datetime`
 
 
 ### Tenders
@@ -360,6 +392,7 @@ ds_sales %>%
   select(money_spent,payment_type, card_type) %>% # too many categories in `last_4`
   tableone::CreateTableOne(data=.) 
 ```
+These fields, it seems, appear in multiple components of the extracted tables (from Square database), but `tenders`, so far has been the most convenient place to extract from.
 
 ### Payments
 
@@ -373,50 +406,86 @@ ds_sales %>%
 
 
 
-
-
-
-
-
-```{r graph-1, echo = echo_chunks, results='show', message=message_chunks}
-ds_sales %>% 
-  ggplot(aes(x=sale_date))+
-  geom_histogram()+
-  scale_x_date(date_breaks = "year")
-```
-
-```{r graph-2, echo = echo_chunks, results='show', message=message_chunks}
-
-```
-
-
-
-
-
 # Analysis
 
 The report is structured as a series of interactions with the data set `ds_sales` which contains all sales transactions of the Edmonton Potters' Guild (EPG) since the launch of the [Square Payment system](https://tinyurl.com/2hzv8z9p) in October of 2015.
 
 Please refer to the [Data Description](#data-description) section for the details. 
 
-
 ## Q1 - When, How many, How much
 
 The Guild conducted multiple sales since payment via Square was in October of 2015. What are the dates on which the sales took place, how many items were sold, and what was the total amount paid?
 
 ```{r q-1, echo = echo_chunks, results='show', message=message_chunks}
-ds_sales %>%
-  group_by(sale_date) %>% 
+dq1 <- 
+  ds_sales %>%
+  group_by(sale_date, sale_name) %>% 
   summarize(
     transaction_count = n_distinct(transaction_id)
-    ,customer_count  = n_distinct(customer_id)
-    ,card_count = n_distinct(last_4)
-    ,collected_total = sum(money_spent, na.rm = T)
-    ,processing_fees = sum(-processing_fee, na.rm =T)
-    ,tax_total = sum(tax_total, na.rm =T)
-  )
+    ,customer_count   = n_distinct(customer_id)
+    ,card_count       = n_distinct(last_4)
+    ,collected_total  = sum(money_spent, na.rm = T)
+    ,processing_fees  = sum(-processing_fee, na.rm =T)
+    ,tax_total        = sum(tax_total, na.rm =T)
+  ) 
+
+dq1 %>% neat(caption = "Table 3a: Summary of transactions")
 ```
-We know that 
+Notice that tax data shows up only after `2022-11-12`. Is there an explanation for that?
+
+```{r echo=FALSE}
+dq2 <- 
+  ds_sales %>%
+  group_by(sale_name) %>% 
+  summarize(
+    transaction_count = n_distinct(transaction_id)
+    ,customer_count   = n_distinct(customer_id)
+    ,card_count       = n_distinct(last_4)
+    ,collected_total  = sum(money_spent, na.rm = T)
+    ,fees_total       = sum(-processing_fee, na.rm =T)
+    ,tax_total        = sum(tax_total, na.rm =T)
+  ) %>% 
+  ungroup()
+  
+dq2 %>% neat(caption = "Table 3b: Summary of transactions (aggregated by event)")
+ 
+```
+
+```{r echo=FALSE, fig.height=9, fig.width=13}
+
+g1 <- 
+  dq2 %>% 
+  tidyr::pivot_longer(cols = 2:7) %>% 
+  mutate(
+    name = factor(name, levels = c("transaction_count","customer_count","card_count",
+                             "collected_total", "fees_total", "tax_total"))
+    ,category = case_when(
+      name %in% c("transaction_count","customer_count","card_count") ~ "Counts"
+      ,name %in% c("collected_total", "fees_total", "tax_total") ~ "Dollars"
+      ,TRUE ~ NA_character_
+    )
+    ,name = factor(name, labels = c("Transactions", "Customers", "Credit Cards",
+                                    "Collected Total", "Fees", "Tax"))
+  ) %>% 
+  ggplot(aes(x=sale_name, y = value, fill = category))+
+  geom_col(alpha = .5)+
+  # geom_text(aes(label=sale_name),vjust=1, size = 2.5, color="grey40")+
+  geom_text(aes(label=sale_name),y=-50, size = 2.5, color="grey40")+
+  scale_fill_viridis_d()+
+  geom_text(aes(label=scales::comma(value,accuracy = 1), vjust =-1), color = "red")+
+  # geom_point()+
+  # geom_line()+
+  scale_y_continuous(expand=expansion(mult=c(.3,.5)))+
+  facet_wrap(facets = "name", ncol=1, scales="free_y")+
+  labs(
+    title = "Graph 1: Summary of sales history"
+    ,x = "Date of the sale", caption = "See Table 3a for details "
+  )
+g1
+g1 %>% quick_save("g1",h=8, w=11)
+```
+
+
 
 # Session Information {#session-info}
 
