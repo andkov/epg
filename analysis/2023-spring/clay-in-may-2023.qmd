@@ -10,6 +10,7 @@ format:
     code-fold: true
     theme: simplex
     highlight-style: breeze
+    self-contained: true
 editor: visual
 ---
 
@@ -29,6 +30,7 @@ cat("\014") # Clear the console
 report_render_start_time <- Sys.time()
 # set options shared by all chunks
 knitr::opts_chunk$set(
+  self.contained = TRUE,
   results      = 'show',
   message      = FALSE,
   warning      = FALSE,
@@ -42,7 +44,7 @@ knitr::opts_chunk$set(
 )
 echo_chunks    <- FALSE #Toggle for debugging.
 message_chunks <- FALSE #Toggle for debugging.
-options(width=100) # number of characters to display in the output (dflt = 80)
+options(width=120) # number of characters to display in the output (dflt = 80)
 ggplot2::theme_set(ggplot2::theme_bw()) # common theme for all graphs
 ```
 
@@ -71,7 +73,7 @@ if (!fs::dir_exists(prints_folder)) { fs::dir_create(prints_folder) }
 
 
 # do not commit the line below
-squareupr::sq_auth(personal_access_token = 
+squareupr::sq_auth(personal_access_token = "EAAAFzB8T90eHXuGePurm5bGO381L0XFv6u-6lIJB0NLj0kjuWd_LgbOEcNyIyh2")
 # do not commit the line above 
 
 ```
@@ -108,6 +110,14 @@ ds_potter <- googlesheets4::read_sheet(sheet_name,"potter",skip = 0) %>% janitor
 ds_sheet %>% glimpse()
 ds_item %>% glimpse()
 ds_potter %>% glimpse()
+
+
+ds_item <- 
+  ds_item %>% 
+  fill(sheet) %>% 
+  left_join(
+    ds_potter %>% select(-potter_email)
+  )
 
 ```
 
@@ -489,6 +499,167 @@ dq4 %>% gt::gt()
 
 ```
 
+# Potters 
+
+> NOTE: "Take home" share = 70% of (total - tax)
+
+```{r}
+d1 <- 
+  ds_item %>% 
+  # left_join(
+  #   ds_potter, by = "potter_id"
+  # ) %>% 
+  group_by(potter_name, potter_id) %>% 
+  summarize(
+    items_sold = n()
+    ,total_amount = sum(price)
+    ,most_expensive = max(price)
+    ,least_expensive = min(price)
+    ,average_price = round(total_amount/items_sold, 2)
+    ,unique_customers = n_distinct(sheet)
+    ,.groups = "drop"
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    tax = total_amount*.05
+    ,net = total_amount - tax
+    ,epg_share = round(net * .3,2)
+    ,take_home = round(net - epg_share,2)
+    # ,epg_share = epg_share %>% scales::comma(accuracy=.01)
+    # ,take_home = take_home %>% scales::comma( accuracy=.01)
+  ) %>% 
+  # arrange(-items_sold)
+  arrange(-total_amount) 
+```
+
+```{r}
+#| tbl-colwidths: false
+dd <- d1
+names(dd) <- names(d1) %>% str_replace("_","\n")
+dd %>% gt::gt()
+```
+
+```{r echo=F}
+#| fig-width: 10
+#| fig-height: 8
+g1 <- 
+  d1 %>% 
+  # mutate(items_sold_ntile = ntile(items_sold,5) %>% factor() %>% fct_rev()) %>% 
+  mutate(
+    items_sold_ntile = ntile(items_sold,5) %>% 
+      factor(levels = 1:5, labels = c(
+        "bottom 20%",
+        "20-40%",
+        "40-60%",
+        "60-80%",
+        "top 20%"
+      )) %>% fct_rev()) %>% 
+  ggplot(aes(x=total_amount,y = fct_reorder(potter_name,total_amount)))+
+  geom_point()+
+  geom_label(aes(label=total_amount, fill=items_sold_ntile))+
+  geom_text(aes(label=potter_name),hjust=-.5)+
+  geom_text(aes(label=items_sold, color = items_sold_ntile),hjust=4)+
+  labs(
+    y = ""
+    ,x = "Total amount sold"
+    ,title = "Total amount sold by potter"
+    ,fill = "Number\nof items\nsold"
+    ,color = "Number\nof items\nsold"
+  )+
+  scale_x_continuous(
+    expand=expansion(mult =c(.1,.2))
+    ,labels = scales::comma_format()
+    )+
+  theme(
+    axis.text.y=element_blank()
+  )+
+   guides(color = guide_none())
+g1
+```
+
+
+# Badges 
+
+> Most number of items sold
+
+```{r}
+d1 %>% 
+   filter(items_sold == max(items_sold)) %>% 
+   select(potter_name, potter_id, items_sold) %>% 
+   gt::gt()
+```
+
+> Most money earned
+
+```{r}
+d1 %>% 
+   filter(total_amount == max(total_amount)) %>% 
+   select(potter_name, potter_id,total_amount, tax, net, epg_share, take_home ) %>% 
+  gt::gt()
+```
+
+> Most expensive item sold
+
+```{r}
+d1 %>% 
+  filter(most_expensive==max(most_expensive)) %>% 
+  select(potter_name, potter_id, most_expensive) %>% 
+  gt::gt()
+```
+
+> Highest average price per item
+
+```{r}
+d1 %>% 
+  filter(average_price == max(average_price)) %>% 
+  select(potter_name, potter_id, average_price) %>% 
+  gt::gt()
+```
+
+
+> Most popular demand / Most unique customers
+
+```{r}
+d1 %>% 
+  filter(unique_customers == max(unique_customers)) %>% 
+  select(potter_name, potter_id, unique_customers) %>% 
+  gt::gt()
+
+```
+
+# Individual Records
+
+```{r }
+#| results: asis
+#| class-source: fold-hide
+
+potters_in_the_sale <- ds_potter %>% 
+  select(-potter_name) %>% 
+  inner_join(ds_item ,by = "potter_id") %>% 
+  arrange(potter_id) %>% select(potter_name, potter_id) %>% distinct()
+
+for(i in seq_along( potters_in_the_sale[[1]]) ){
+  # i <- 10
+  potter_name_i <- potters_in_the_sale %>% slice(i) %>% pull(potter_name)
+  potter_id_i   <- potters_in_the_sale %>% slice(i) %>% pull(potter_id)
+  # cat("\n## ",potter_name_i," (",potter_id_i,")", "\n")
+  cat("\n## ",potter_id_i," - ",potter_name_i,"\n")
+  cat("\n")
+  d_single <- 
+    ds_potter %>% 
+    select(1:2) %>%  
+    filter(potter_id == potter_id_i) %>% 
+    left_join(ds_item %>% select(-1,-2), by = "potter_id")
+  d_summary <- d1 %>% filter(potter_id == potter_id_i)
+  ddd <- d_summary
+  names(ddd) <- names(d_summary) %>% str_replace("_","\n")
+  
+  ddd %>% gt::gt() %>% print()
+  d_single %>% gt::gt() %>% print()
+  
+}
+
+```
 
 
 # Session Information {#session-info}
